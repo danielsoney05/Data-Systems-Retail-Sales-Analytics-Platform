@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manual Data Entry</title>
+    <style>
+        body {
+            font-family: Arial;
+            margin: 40px;
+        }
+
+        input, select {
+            margin-bottom: 10px;
+            width: 300px;
+            padding: 5px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+        }
+
+        .section {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Add New Order</h2>
+
+<form method="POST" action="/submit">
+
+    <!-- Seller Dropdown -->
+    <div class="section">
+        <label>Seller</label>
+        <select name="seller_id">
+            {% for s in sellers %}
+                <option value="{{ s.seller_id }}">
+                    {{ s.seller_id }} ({{ s.seller_city }}, {{ s.seller_state }})
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Other Fields -->
+    <div class="section">
+        {% for field in fields %}
+            {% if field not in ['seller_id', 'seller_city', 'seller_state'] %}
+                <label>{{ field }}</label>
+                <input name="{{ field }}">
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    <button type="submit">Submit</button>
+
+</form>
+
+</body>
+</html>
