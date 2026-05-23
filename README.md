@@ -146,6 +146,57 @@ To remove the container:
 docker rm olist-app
 
 
+----------------------------------------------------------------------
+AIRFLOW ORCHESTRATION
+----------------------------------------------------------------------
+
+### Airflow setup
+
+This repository now includes an Airflow DAG that runs `pipeline/move_gcs_bq.py` every day at `23:45` in the `Australia/Sydney` timezone.
+
+The DAG file is:
+
+- `dags/move_gcs_bq_dag.py`
+
+A Docker Compose setup is also included to run both the Flask app and Airflow together.
+
+### How to use it
+
+1. Copy `.env.example` to `.env` and fill in your Google Cloud values:
+
+```bash
+copy .env.example .env
+```
+
+2. Start the services:
+
+```bash
+docker compose up --build
+```
+
+3. Access Airflow:
+
+http://localhost:8080
+
+4. Access the Flask app:
+
+http://localhost:5000
+
+### Notes
+
+- The Airflow service uses `Dockerfile.airflow` to install the project dependencies before running Airflow.
+- The DAG executes the Python script from the mounted project root with:
+
+```bash
+cd /opt/airflow/project && python pipeline/move_gcs_bq.py
+```
+
+- If you want only Airflow and not the Flask app, run:
+
+```bash
+docker compose up --build airflow
+```
+
 
 ----------------------------------------------------------------------
 COMMON ISSUES
