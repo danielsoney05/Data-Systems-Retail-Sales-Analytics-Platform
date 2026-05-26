@@ -2,3 +2,6 @@
 .venv
 .vscode
 data/raw_data/
+input_app/key.json
+logs/
+_pycache__/
