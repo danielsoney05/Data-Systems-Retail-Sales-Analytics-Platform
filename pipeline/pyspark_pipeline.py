@@ -1,26 +1,38 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-# GCS Bucket Path (was testing my own GCS bucket)
-BASE_PATH   = "C:/Users/danie/OneDrive/Documents/projects/Data-Systems-Retail-Sales-Analytics-Platform/data/"
-OUTPUT_PATH = "C:/Users/danie/OneDrive/Documents/projects/Data-Systems-Retail-Sales-Analytics-Platform/output/"
+# GCS Bucket & BigQuery Config
+GCS_TEMP_BUCKET  = "gs://olist-494110_bucket/temp/"
+BQ_PROJECT       = "olist-494110"
+BQ_SOURCE        = "olist"
+BQ_DATASET       = "olist_cleaned"
 
-# Load Data from GCS into Spark DataFrames
-def load_csv(spark, filename: str):
-    return spark.read.csv(BASE_PATH + filename, header=True, inferSchema=True)
+# Load a table directly from BigQuery
+def load_bq(spark, table_name: str):
+    return (spark.read
+        .format("bigquery")
+        .option("table", f"{BQ_PROJECT}.{BQ_SOURCE}.{table_name}")
+        .option("temporaryGcsBucket", GCS_TEMP_BUCKET.replace("gs://", "").split("/")[0])
+        .load()
+    )
 
-def save(df, filename: str):
-    from pyspark.sql import functions as F
+def save(df, table_name: str):
     from pyspark.sql.types import ArrayType
-    
+
+    # Flatten any array columns — BigQuery does not support ArrayType via this connector
     for field in df.schema.fields:
         if isinstance(field.dataType, ArrayType):
             df = df.withColumn(field.name, F.concat_ws(",", F.col(field.name)))
-    
-    df.write.mode("overwrite").parquet(OUTPUT_PATH + filename)
+
+    df.write \
+        .format("bigquery") \
+        .option("table", f"{BQ_PROJECT}.{BQ_DATASET}.{table_name}") \
+        .option("writeMethod", "direct") \
+        .mode("overwrite") \
+        .save()
 
 def clean_orders(df):
-    return (df.dropna(subset=["order_id", "customer_id" ]).dropDuplicates(["order_id"])
+    return (df.dropna(subset=["order_id", "customer_id"]).dropDuplicates(["order_id"])
             .withColumn("order_purchase_timestamp", F.to_timestamp("order_purchase_timestamp", "yyyy-MM-dd HH:mm:ss"))
             .withColumn("order_estimated_delivery_date", F.to_timestamp("order_estimated_delivery_date", "yyyy-MM-dd HH:mm:ss"))
             .withColumn("order_delivered_customer_date", F.to_timestamp("order_delivered_customer_date", "yyyy-MM-dd HH:mm:ss")))
@@ -39,7 +51,6 @@ def clean_order_items(df):
     )
 
 def clean_products(df, category_translation):
-    # joining english category names to the original product dataframe
     return (df
         .dropna(subset=["product_id"])
         .dropDuplicates(["product_id"])
@@ -72,7 +83,7 @@ def clean_reviews(df):
 def clean_sellers(df, geolocation):
     geo_dedup = (geolocation
         .dropna(subset=["geolocation_zip_code_prefix"])
-        .dropDuplicates(["geolocation_zip_code_prefix"]) 
+        .dropDuplicates(["geolocation_zip_code_prefix"])
         .select(
             F.col("geolocation_zip_code_prefix").alias("seller_zip_code_prefix"),
             "geolocation_lat",
@@ -90,8 +101,8 @@ def create_fact_orders(orders, customers, payments, reviews):
 
     return (orders
         .join(customers_s, on="customer_id", how="inner")
-        .join(payments,  on="order_id", how="left")
-        .join(reviews,   on="order_id", how="left")
+        .join(payments,    on="order_id",    how="left")
+        .join(reviews,     on="order_id",    how="left")
         .withColumn("delivery_days",
             F.datediff("order_delivered_customer_date", "order_purchase_timestamp"))
         .withColumn("estimated_days",
@@ -102,13 +113,12 @@ def create_fact_orders(orders, customers, payments, reviews):
         .withColumn("purchase_month", F.month("order_purchase_timestamp"))
     )
 
-
 def create_fact_order_items(order_items, orders, products, sellers):
     orders_s = orders.select("order_id", "customer_id",
-                                "order_status", "order_purchase_timestamp")
+                             "order_status", "order_purchase_timestamp")
     return (order_items
-        .join(orders_s, on="order_id",    how="left")
-        .join(products,    on="product_id",  how="left")
+        .join(orders_s,  on="order_id",   how="left")
+        .join(products,  on="product_id", how="left")
         .join(sellers.select(
                 "seller_id", "seller_city",
                 "seller_state", "geolocation_lat", "geolocation_lng"),
@@ -117,59 +127,77 @@ def create_fact_order_items(order_items, orders, products, sellers):
         .withColumn("purchase_month", F.month("order_purchase_timestamp"))
     )
 
-
 def run_pipeline():
-    # For Script to work on Windows
     import os
+
+    # Windows Hadoop config
     os.environ["HADOOP_HOME"] = "C:/hadoop"
     os.environ["PATH"] = os.environ["PATH"] + ";C:/hadoop/bin"
 
-    # Initialize Spark Session
+    # GCP credentials — created automatically by: gcloud auth application-default login
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
+        os.path.expanduser("~/AppData/Roaming/gcloud/application_default_credentials.json")
+    )
+
+    # Initialize Spark Session with BigQuery connector
     spark = (
         SparkSession.builder
         .appName("Retail Pipeline")
+        .config(
+            "spark.jars.packages",
+            "com.google.cloud.spark:spark-bigquery-with-dependencies_2.12:0.36.1"
+        )
         .getOrCreate()
     )
 
-    # Extract -> Load raw data from GCS
-    raw_orders = load_csv(spark, "orders.csv")
-    raw_customers = load_csv(spark, "customers.csv")
-    raw_order_items = load_csv(spark, "order_items.csv")
-    raw_products = load_csv(spark, "products.csv")
-    raw_payments = load_csv(spark, "payments.csv")
-    raw_reviews = load_csv(spark, "reviews.csv")
-    raw_sellers = load_csv(spark, "sellers.csv")
-    raw_geolocation = load_csv(spark, "geolocation.csv")
-    raw_category_translation = load_csv(spark, "product_category_translation.csv")
+    spark._jsc.hadoopConfiguration().set(
+        "fs.gs.impl",
+        "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem"
+    )
+
+    spark._jsc.hadoopConfiguration().set(
+        "fs.AbstractFileSystem.gs.impl",
+        "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS"
+    )
+
+    # Extract — load raw tables from BigQuery olist dataset
+    raw_orders               = load_bq(spark, "orders")
+    raw_customers            = load_bq(spark, "customer")
+    raw_order_items          = load_bq(spark, "order_items")
+    raw_products             = load_bq(spark, "products")
+    raw_payments             = load_bq(spark, "order_payments")
+    raw_reviews              = load_bq(spark, "order_reviews")
+    raw_sellers              = load_bq(spark, "sellers")
+    raw_geolocation          = load_bq(spark, "geolocation")
+    raw_category_translation = load_bq(spark, "product_category_name_translation")
 
     print("Data Loaded Successfully!")
 
-    # Transform -> Data Cleaning
-    orders = clean_orders(raw_orders)
-    customers = clean_customers(raw_customers)
+    # Transform — clean each table
+    orders      = clean_orders(raw_orders)
+    customers   = clean_customers(raw_customers)
     order_items = clean_order_items(raw_order_items)
-    products = clean_products(raw_products, raw_category_translation)
-    payments = clean_payments(raw_payments)
-    reviews = clean_reviews(raw_reviews)
-    sellers = clean_sellers(raw_sellers, raw_geolocation)
+    products    = clean_products(raw_products, raw_category_translation)
+    payments    = clean_payments(raw_payments)
+    reviews     = clean_reviews(raw_reviews)
+    sellers     = clean_sellers(raw_sellers, raw_geolocation)
 
-    # Creating Table Relationships and Joining Data
-    fact_orders_df = create_fact_orders(orders, customers, payments, reviews)
+    # Build fact tables
+    fact_orders_df      = create_fact_orders(orders, customers, payments, reviews)
     fact_order_items_df = create_fact_order_items(order_items, orders, products, sellers)
 
     fact_orders_df.show(5)
     fact_order_items_df.show(5)
 
-    # Load -> Write transformed data back to GCS in Parquet format
-    save(fact_orders_df, "fact_orders")
+    # Load — write to BigQuery under olist-494110.olist_cleaned
+    save(fact_orders_df,      "fact_orders")
     save(fact_order_items_df, "fact_order_items")
-    save(customers, "dim_customers")
-    save(products, "dim_products")
-    save(sellers, "dim_sellers")
+    save(customers,           "dim_customers")
+    save(products,            "dim_products")
+    save(sellers,             "dim_sellers")
 
-    print("Data Transformed and Saved Successfully!")
+    print("Data Transformed and Saved to BigQuery Successfully!")
 
-    # End Spark Session
     spark.stop()
 
 if __name__ == "__main__":
