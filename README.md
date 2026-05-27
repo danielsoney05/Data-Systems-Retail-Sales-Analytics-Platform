@@ -34,13 +34,13 @@ The Looker Dashboard link can be found here: [Link to Looker Dashboard](https://
 
 ---
 
-## How to Run `app.py` via Docker
+## How to Run the System with Docker Compose
 
 ### Prerequisites
 
-Before running the app, make sure you have:
+Before running the system, make sure you have:
 
-- Docker installed
+- Docker Desktop installed and running
 - A Google Cloud service account JSON key
 - Access to the required Google Cloud Storage bucket
 - Access to the required BigQuery dataset and tables
@@ -75,7 +75,11 @@ Data-Systems-Retail-Sales-Analytics-Platform/
 │   ├── app.py
 │   ├── key.json
 │   └── templates/
+├── dags/
+├── pipeline/
+├── docker-compose.yml
 ├── Dockerfile
+├── Dockerfile.airflow
 └── requirements.txt
 ```
 
@@ -91,59 +95,69 @@ key.json
 
 ---
 
-## 3. Build the Docker Image
+## 3. Create the Environment File
 
-From the repository root, run:
-
-```bash
-docker build -t olist-input-app .
-```
-
-This creates a Docker image called:
-
-```text
-olist-input-app
-```
-
----
-
-## 4. Run the Docker Container
+Copy `.env.example` to `.env` and fill in your Google Cloud values.
 
 Windows PowerShell / CMD:
 
 ```bash
-docker run -p 5000:5000 ^
--v "%cd%\input_app\key.json:/app/input_app/key.json" ^
---name olist-app ^
-olist-input-app
+copy .env.example .env
 ```
 
 Mac/Linux:
 
 ```bash
-docker run -p 5000:5000 \
--v "$(pwd)/input_app/key.json:/app/input_app/key.json" \
---name olist-app \
-olist-input-app
+cp .env.example .env
 ```
 
-This starts the Flask app and maps it to:
+The `.env` file is used by Docker Compose, the Flask app, and the Airflow pipeline to read the correct Google Cloud project, bucket, dataset, table, and credential settings.
 
-```text
-http://localhost:5000
+---
+
+## 4. Start the Services with Docker Compose
+
+This project already includes a `docker-compose.yml` file, so you do **not** need to manually run `docker build` and `docker run` separately.
+
+For the first run, or after changing `Dockerfile`, `Dockerfile.airflow`, or `requirements.txt`, run:
+
+```bash
+docker compose up --build
+```
+
+This command builds the required images automatically and starts the services defined in `docker-compose.yml`.
+
+For normal runs after the images have already been built, run:
+
+```bash
+docker compose up
+```
+
+To run the services in the background:
+
+```bash
+docker compose up -d
 ```
 
 ---
 
-## 5. Open the App
+## 5. Open the Services
 
-Once the container is running, open:
+Once the containers are running, open the Flask app:
 
 ```text
 http://localhost:5000
 ```
 
 You should be redirected to the login page.
+
+Open Airflow:
+
+```text
+http://localhost:8080
+```
+
+Use Airflow to monitor the daily DAG that loads the daily CSV file from Google Cloud Storage into the BigQuery staging table.
 
 ---
 
@@ -208,18 +222,24 @@ orders_YYYY-MM-DD.csv
 
 ---
 
-### 9. Stopping the Container
+### 9. Stopping the Services
 
-To stop the app:
+To stop the running containers:
 
 ```bash
-docker stop olist-app
+docker compose down
 ```
 
-To remove the container:
+To stop the services but keep the containers available for later:
 
 ```bash
-docker rm olist-app
+docker compose stop
+```
+
+To start them again:
+
+```bash
+docker compose start
 ```
 
 ---
@@ -240,31 +260,25 @@ A Docker Compose setup is also included to run both the Flask app and Airflow to
 
 ### How to Use It
 
-1. Copy `.env.example` to `.env` and fill in your Google Cloud values:
-
-```bash
-copy .env.example .env
-```
-
-For Mac/Linux:
-
-```bash
-cp .env.example .env
-```
-
-2. Start the services:
+The full system is started through Docker Compose as described above:
 
 ```bash
 docker compose up --build
 ```
 
-3. Access Airflow:
+After the first successful build, you can normally use:
+
+```bash
+docker compose up
+```
+
+Access Airflow at:
 
 ```text
 http://localhost:8080
 ```
 
-4. Access the Flask app:
+Access the Flask app at:
 
 ```text
 http://localhost:5000
@@ -282,7 +296,7 @@ cd /opt/airflow/project && python pipeline/move_gcs_bq.py
 - If you want only Airflow and not the Flask app, run:
 
 ```bash
-docker compose up --build airflow
+docker compose up airflow
 ```
 
 ---
@@ -409,4 +423,3 @@ Check that:
 - the service account has access to GCS and BigQuery
 - the daily CSV file exists in the expected GCS path
 - the staging dataset and table names match the script configuration
-

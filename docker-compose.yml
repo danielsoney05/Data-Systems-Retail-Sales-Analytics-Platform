@@ -21,6 +21,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__CORE__DEFAULT_TIMEZONE: Australia/Sydney
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/project/input_app/key.json
     volumes:
       - ./dags:/opt/airflow/dags
       - ./:/opt/airflow/project
