@@ -410,11 +410,3 @@ Check that:
 - the daily CSV file exists in the expected GCS path
 - the staging dataset and table names match the script configuration
 
-### BigQuery Scheduled Query Fails
-
-Check that:
-
-- `olist_staging.stg_daily_orders_raw` exists
-- the staging table has the expected columns
-- the final tables exist in the `olist` dataset
-- timestamp fields match the expected `%Y-%m-%d %H:%M:%S` format
