@@ -4,17 +4,17 @@ from pyspark.sql import functions as F
 # GCS Bucket & BigQuery Config
 GCS_TEMP_BUCKET  = "gs://olist-494110_bucket/temp/"
 BQ_PROJECT       = "olist-494110"
-BQ_SOURCE        = "olist"
-BQ_DATASET       = "olist_cleaned"
+BQ_DATASET       = "olist"
+DATA_DIR = "data"
 
-# Load a table directly from BigQuery
-def load_bq(spark, table_name: str):
-    return (spark.read
-        .format("bigquery")
-        .option("table", f"{BQ_PROJECT}.{BQ_SOURCE}.{table_name}")
-        .option("temporaryGcsBucket", GCS_TEMP_BUCKET.replace("gs://", "").split("/")[0])
-        .load()
+def load_csv(spark, file_name: str):
+    return (
+        spark.read
+        .option("header", True)
+        .option("inferSchema", True)
+        .csv(f"{DATA_DIR}/{file_name}")
     )
+
 
 def save(df, table_name: str):
     from pyspark.sql.types import ArrayType
@@ -160,16 +160,16 @@ def run_pipeline():
         "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS"
     )
 
-    # Extract — load raw tables from BigQuery olist dataset
-    raw_orders               = load_bq(spark, "orders")
-    raw_customers            = load_bq(spark, "customer")
-    raw_order_items          = load_bq(spark, "order_items")
-    raw_products             = load_bq(spark, "products")
-    raw_payments             = load_bq(spark, "order_payments")
-    raw_reviews              = load_bq(spark, "order_reviews")
-    raw_sellers              = load_bq(spark, "sellers")
-    raw_geolocation          = load_bq(spark, "geolocation")
-    raw_category_translation = load_bq(spark, "product_category_name_translation")
+    # Extract — load raw tables from olist dataset
+    raw_orders = load_csv(spark, "orders.csv")
+    raw_customers = load_csv(spark, "customers.csv")
+    raw_order_items = load_csv(spark, "order_items.csv")
+    raw_products = load_csv(spark, "products.csv")
+    raw_payments = load_csv(spark, "payments.csv")
+    raw_reviews = load_csv(spark, "reviews.csv")
+    raw_sellers = load_csv(spark, "sellers.csv")
+    raw_geolocation = load_csv(spark, "geolocation.csv")
+    raw_category_translation = load_csv(spark, "product_category_translation.csv") 
 
     print("Data Loaded Successfully!")
 

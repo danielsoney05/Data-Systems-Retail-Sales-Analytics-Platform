@@ -28,6 +28,12 @@ Looker dashboard
 
 ---
 
+## Looker Dashboard Link
+
+The Looker Dashboard link can be found here: [Link to Looker Dashboard](https://datastudio.google.com/u/1/reporting/4ede62e7-54eb-44c6-814b-bdd06b0bd386/page/p_cu0tepgf3d/edit)
+
+---
+
 ## How to Run `app.py` via Docker
 
 ### Prerequisites
